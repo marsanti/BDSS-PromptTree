@@ -23,6 +23,7 @@ from core.utils import (
     calculate_cluster_distances,
     calculate_entropy,
     calculate_purity,
+    visualize_linkage
 )
 from core.tree_functions import (
     fe_default,
@@ -398,7 +399,7 @@ def main_unsupervised(dataset, n_estimators: int, random_state: int):
         # Perform Hierarchical Clustering
         print("Performing hierarchical clustering (average linkage)...")
         try:
-            cluster_labels = perform_clustering(distance_matrix, dataset.true_num_classes)
+            cluster_labels = perform_clustering(distance_matrix, dataset.true_num_classes, dist_name)
         except Exception as e:
             print(
                 f"Error during clustering for {dist_name}: {e}. Skipping this metric."
@@ -430,7 +431,7 @@ def main_unsupervised(dataset, n_estimators: int, random_state: int):
     else:
         print("  Not enough valid clustering results to compare.")
 
-def perform_clustering(distance_matrix, num_classes):
+def perform_clustering(distance_matrix, num_classes, dist_name: str):
     """Helper to perform hierarchical clustering."""
     # Convert to condensed form for SciPy
     condensed_dist = squareform(distance_matrix, checks=True) # Enable checks
@@ -447,6 +448,8 @@ def perform_clustering(distance_matrix, num_classes):
 
     # Perform average linkage (UPGMA)
     linked = linkage(condensed_dist, method="average")
+    # visualize dendrogram
+    visualize_linkage(linked, dist_name)
     # Form flat clusters based on the true number of classes
     cluster_labels = fcluster(
         linked, t=num_classes, criterion="maxclust"

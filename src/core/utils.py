@@ -2,6 +2,8 @@ import math
 import numpy as np
 from collections import Counter, defaultdict
 from typing import Literal, TYPE_CHECKING
+import matplotlib.pyplot as plt
+from scipy.cluster.hierarchy import dendrogram
 
 if TYPE_CHECKING:
     from .tree import PromptTree
@@ -430,3 +432,14 @@ def calculate_entropy(y_true: np.ndarray, y_pred_clusters: np.ndarray) -> float:
         total_entropy += (n_cluster / n_samples) * cluster_entropy
 
     return total_entropy
+
+def visualize_linkage(linked: np.ndarray, dist_name: str):
+    plt.figure(figsize=(10, 5))
+    dendrogram(linked, truncate_mode='lastp', p=20, leaf_rotation=90., leaf_font_size=10.)
+    plt.title(f'Hierarchical Clustering Dendrogram ({dist_name})')
+    plt.xlabel('Cluster Size')
+    plt.ylabel('Distance')
+    plt.tight_layout()
+    plt.savefig(f"dendrogram_{dist_name}.png")
+    plt.close()
+    print(f"Dendrogram saved to dendrogram_{dist_name}.png")

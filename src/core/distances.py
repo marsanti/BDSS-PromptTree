@@ -125,7 +125,7 @@ def compute_zhu_distance_matrix(forest: "RandomForest", X: np.ndarray) -> np.nda
         dist_matrix = np.zeros((n_samples, n_samples), dtype=float)
         return dist_matrix 
 
-    # Let's process tree by tree to save memory
+    # Sum matrix to accumulate distances
     sum_of_depth_diffs = np.zeros((n_samples, n_samples), dtype=float)
 
     print("Calculating Zhu distances (tree by tree)...")
@@ -145,39 +145,19 @@ def compute_zhu_distance_matrix(forest: "RandomForest", X: np.ndarray) -> np.nda
                 path_i = paths_t[i]
                 path_j = paths_t[j]
 
-                # Find depth of separation d(i, j, T)
-                depth_of_separation = 0
-                # Check if paths are valid (not empty, potentially handle 'too-early' if needed)
+                # Find the depth of the last common node (ancestor)
+                common_depth = 0 # Default to 0 (root)
+                
                 if path_i and path_j:
-                    # Find the length of the common prefix path
-                    min_len = min(len(path_i), len(path_j))
-                    for k in range(min_len):
-                        if path_i[k] == path_j[k]:
-                            # The depth of this common node IS k
-                            depth_of_separation = k
+                    # Zip iterates until the shortest path ends
+                    for node_i, node_j in zip(path_i, path_j):
+                        if node_i == node_j:
+                            common_depth = node_i.depth
                         else:
-                            break  # Diverged at previous depth
-                else:
-                    # Handle invalid paths (e.g., sample too short for root)
-                    # Contribution should be maximal distance: max_depth - 0
-                    depth_of_separation = -1  # Or 0, results in max_depth contribution
-
-                # Let's refine d: Depth of last common ancestor node.
-                common_depth = -1
-                if path_i and path_j:
-                    min_len = min(len(path_i), len(path_j))
-                    for k in range(min_len):
-                        if path_i[k] == path_j[k]:
-                            common_depth = path_i[k].depth  # Use stored depth
-                        else:
-                            break
-
-                # If common_depth is -1, they didn't even share the root (error?) or one path was empty.
-                # Treat as separated at depth 0. Common node depth is 0.
-                d_ij_t = max(0, common_depth)  # Ensure non-negative depth
-
+                            break # Paths have diverged
+                
                 # Contribution to distance sum
-                dist_contribution = max_depth_t - d_ij_t
+                dist_contribution = max_depth_t - common_depth
 
                 sum_of_depth_diffs[i, j] += dist_contribution
                 sum_of_depth_diffs[j, i] += dist_contribution

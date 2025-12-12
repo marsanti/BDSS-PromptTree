@@ -1,6 +1,6 @@
 import numpy as np
 from collections import Counter
-from typing import Literal
+from typing import Literal, List
 import random
 
 from .tree import PromptTree
@@ -13,6 +13,18 @@ from .tree_functions import (
 )
 from .utils import evaluate_tree_accuracy
 
+def c_factor(n):
+    """
+    Average path length of unsuccessful search in BST (Normalization factor).
+    n: number of external nodes (subsample size).
+    """
+    if n <= 1:
+        return 0.0
+    if n == 2:
+        return 1.0
+    # Euler's constant approximation
+    euler_gamma = 0.5772156649
+    return 2.0 * (np.log(n - 1) + euler_gamma) - (2.0 * (n - 1) / n)
 
 class RandomForest:
     def __init__(
@@ -60,7 +72,7 @@ class RandomForest:
         # Store tree customization functions
         self.tree_kwargs = {"fp": fp, "fs": fs, "fc": fc, "fo": fo, "fe": fe}
 
-        self.trees = []
+        self.trees: List[PromptTree] = []
         # For track-record voting
         self.oob_scores = None
         self.tree_max_depths = []
@@ -284,78 +296,76 @@ class RandomForest:
         predictions = [self.classes_[idx] for idx in predicted_indices]
         return np.array(predictions)
 
-    # Methods for Unsupervised Forest
+    # Methods for Unsupervised / Isolation Forest
     def get_path_lengths(self, X):
-        """Calculates path length for each sample in each tree."""
-        if self.mode != "unsupervised":
-            raise AttributeError("Path length calculation is for unsupervised mode.")
+        """
+        Calculates the path length (depth) for each sample in X for every tree.
+        """
         if not self.trees:
-            raise RuntimeError("Forest is not fitted yet.")
-
-        all_path_lengths = np.zeros((len(X), self.n_estimators))
+            raise RuntimeError("Forest not fitted.")
+        
+        n_samples = len(X)
+        path_lengths = np.zeros((n_samples, self.n_estimators))
 
         for i, tree in enumerate(self.trees):
             for j, x_sample in enumerate(X):
-                # Need a method in PromptTree to get path length for a sample
-                # e.g., tree.get_path_length(x_sample) -> returns integer depth
-                # Placeholder: Assume such a method exists
-                # length = tree.get_path_length(x_sample)
-                # If predict_one implicitly returns depth in unsupervised mode:
-                length = self._get_path_length_recursive(tree.root, x_sample)
-                all_path_lengths[j, i] = length
-        return all_path_lengths
-
-    def _get_path_length_recursive(self, node, x_sample, current_depth=0):
-        """Helper to find path length by traversing the tree."""
-        if node is None or node.is_leaf:
-            # Standard Isolation Forest adds adjustment for leaf size if needed
-            # Simplified: just return depth
-            return current_depth
-
-        # Check if sample is long enough for the test
-        if node.e > x_sample[node.c].shape[-1]:
-            # How to handle 'too-early' in path length?
-            # Option 1: Return current depth (treat as stopping early)
-            # Option 2: Return a penalty value (e.g., max_depth + 1)
-            # Let's use Option 1 for now
-            return current_depth
-
-        delta_func = DELTA_SET[node.delta_name]  # Requires DELTA_SET to be accessible
-        d = delta_func(x_sample[node.c][node.b : node.e], node.x_ref)
-
-        if d <= node.eps:
-            return self._get_path_length_recursive(
-                node.left, x_sample, current_depth + 1
-            )
-        else:
-            return self._get_path_length_recursive(
-                node.right, x_sample, current_depth + 1
-            )
+                # We use get_path_nodes (added for Zhu distance) to calculate length
+                nodes = tree.get_path_nodes(x_sample)
+                # Path length is number of edges, which is nodes - 1
+                depth = len(nodes) - 1 if nodes else 0
+                path_lengths[j, i] = depth
+        
+        return path_lengths
 
     def anomaly_score(self, X):
-        """Calculates anomaly score based on average path length (Isolation Forest)."""
-        avg_path_lengths = np.mean(self.get_path_lengths(X), axis=1)
+        """
+        Calculates the standard Isolation Forest anomaly score.
+        Score s(x, n) = 2^(-E(h(x)) / c(n))
+        
+        Returns:
+            scores (np.array): Value between 0 and 1. 
+                               Closer to 1 => Anomaly (short path).
+                               Closer to 0.5 or 0 => Normal (long path).
+        """
+        # 1. Calculate Average Path Length E(h(x))
+        all_path_lengths = self.get_path_lengths(X)
+        avg_path_lengths = np.mean(all_path_lengths, axis=1)
 
-        return avg_path_lengths  #TODO: it's just a placeholder, need proper scoring formula
+        # 2. Determine subsample size 'n' used during training
+        # Heuristic: Try to retrieve the count from the first tree's root
+        n = 256 # Default fallback
+        if self.trees and self.trees[0].root:
+            # Check if root.dist is a dict with 'count' (unsupervised)
+            if isinstance(self.trees[0].root.dist, dict):
+                 n = self.trees[0].root.dist.get('count', 256)
+            # Or if it's supervised, it might be the sum of class counts
+            elif isinstance(self.trees[0].root.dist, dict):
+                 n = sum(self.trees[0].root.dist.values())
 
-    # --- Methods for Clustering Distances  ---
-    # These require getting leaf node assignments for pairs of samples
-    # This structure provides the basics, but distances need dedicated implementation.
+        # 3. Calculate c(n) normalization factor
+        c_n = c_factor(n)
 
-    def get_leaf_nodes(self, X):
-        """Find the leaf node ID each sample falls into for each tree."""
+        if c_n == 0:
+            return np.ones(len(X)) * 0.5
+
+        # 4. Calculate Score
+        scores = 2 ** (-avg_path_lengths / c_n)
+        return scores
+
+    def get_leaf_assignments(self, X):
+        """
+        Find the leaf node ID each sample falls into for each tree.
+        (Renamed from get_leaf_nodes to match main.py)
+        """
         if not self.trees:
             raise RuntimeError("Forest not fitted.")
 
         leaf_indices = np.zeros((len(X), self.n_estimators), dtype=int)
-        # Need a way to assign unique IDs to leaf nodes across the forest or per tree
-        # And a way for PromptTree to return the ID of the leaf a sample reaches.
-        # Placeholder implementation:
-        print(
-            "Warning: get_leaf_nodes needs PromptTree modification to return leaf IDs."
-        )
-        # for i, tree in enumerate(self.trees):
-        #      for j, x_sample in enumerate(X):
-        #           leaf_id = tree.get_leaf_id(x_sample) # Assumed method
-        #           leaf_indices[j, i] = leaf_id
+        
+        for i, tree in enumerate(self.trees):
+            for j, x_sample in enumerate(X):
+                # Retrieve the unique leaf ID assigned during tree building
+                leaf_id = tree.get_leaf_id(x_sample)
+                leaf_indices[j, i] = leaf_id
+                
         return leaf_indices
