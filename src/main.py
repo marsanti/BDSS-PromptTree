@@ -23,7 +23,7 @@ from core.utils import (
     calculate_cluster_distances,
     calculate_entropy,
     calculate_purity,
-    visualize_linkage
+    visualize_linkage,
 )
 from core.tree_functions import (
     fe_default,
@@ -35,7 +35,7 @@ from core.distances import (
     compute_zhu_distance_matrix,
     compute_ratioRF_distance_matrix,
 )
-from config import config, parse_args
+from config import ArgsType, config, parse_args
 
 
 def load_dataset(
@@ -93,10 +93,10 @@ def load_dataset(
         sys.exit(1)
 
 
-def main_single_tree(dataset, relaxed_stopping: bool):
+def main_single_tree(dataset, config: ArgsType):
     """Trains, prunes, evaluates, and visualizes a single PromptTree."""
 
-    if relaxed_stopping:
+    if config.relaxed_stopping:
         print("\nUsing relaxed stopping criteria...")
         stopper = lambda Path, X, Y, depth: fe_default(
             Path, X, Y, depth, max_depth=20, min_samples=2
@@ -105,7 +105,7 @@ def main_single_tree(dataset, relaxed_stopping: bool):
         stopping_path = "relaxed"
     else:
         print("\nUsing default stopping criteria...")
-        original_tree = PromptTree()
+        original_tree = PromptTree(max_depth=max_depth, min_samples=min_samples)
         stopping_path = "default"
 
     print("\nFitting the tree...")
@@ -166,17 +166,21 @@ def main_single_tree(dataset, relaxed_stopping: bool):
         print(f"Warning: Could not visualize pruned tree. Error: {e}")
 
 
-def main_forest(dataset, n_estimators: int, voting_mechanism: str, random_state: int):
+def main_forest(dataset, config: ArgsType):
     """Main logic Random Forest: trains and evaluates a Random Forest."""
     print(f"\n--- Random Forest Experiment ---")
     print(f"  Dataset: {dataset.dataset_name}")
-    print(f"  Num Estimators: {n_estimators}")
-    print(f"  Voting: {voting_mechanism}")
+    print(f"  Num Estimators: {config.n_estimators}")
+    print(f"  Voting: {config.voting}")
 
     forest = RandomForest(
-        n_estimators=n_estimators,
+        n_estimators=config.n_estimators,
         mode="supervised",
-        random_state=random_state,
+        random_state=config.seed,
+        bootstrap=config.bootstrap,
+        max_samples=config.max_samples,
+        max_depth=max_depth,
+        min_samples=min_samples,
     )
 
     print("\nFitting the forest...")
@@ -184,11 +188,11 @@ def main_forest(dataset, n_estimators: int, voting_mechanism: str, random_state:
 
     print("\nEvaluating forest on test set...")
     accuracy = evaluate_forest_accuracy(
-        forest, dataset.X_test, dataset.Y_test, voting=voting_mechanism
+        forest, dataset.X_test, dataset.Y_test, voting=config.voting
     )
 
     print(f"\n--- FINAL RESULTS (Random Forest) ---")
-    print(f"Forest Test Accuracy ({voting_mechanism} voting): {accuracy * 100:.2f}%")
+    print(f"Forest Test Accuracy ({config.voting} voting): {accuracy * 100:.2f}%")
 
     # Print OOB score if available
     if (
@@ -200,61 +204,55 @@ def main_forest(dataset, n_estimators: int, voting_mechanism: str, random_state:
         print(f"Overall Forest OOB Accuracy Estimate: {oob_mean * 100:.2f}%")
 
 
-def main_conformal(
-    dataset,
-    n_estimators: int,
-    voting_mechanism: str,
-    random_state: int,
-    calibration_ratio: float = 0.3,
-    significance_level: float = 0.1,
-):
+def main_conformal(dataset, config: ArgsType):
     """Performs conformal prediction using a Random Forest."""
     print(f"\n--- Conformal Prediction Experiment ---")
     print(f"  Dataset: {dataset.dataset_name}")
-    print(f"  Num Estimators: {n_estimators}")
-    print(f"  Voting: {voting_mechanism}")
-    print(f"  Calibration Ratio: {calibration_ratio}")
-    print(f"  Significance Level (epsilon): {significance_level}")
+    print(f"  Num Estimators: {config.n_estimators}")
+    print(f"  Voting: {config.voting}")
+    print(f"  Calibration Ratio: {config.cal_ratio}")
+    print(f"  Significance Level (epsilon): {config.epsilon}")
 
-    # Split Training data into Proper Training and Calibration sets
+    # Split Training data into Training and Calibration sets
     X_train_full = dataset.X_train
     Y_train_full = dataset.Y_train
 
-    if len(X_train_full) < 2 or calibration_ratio <= 0.0 or calibration_ratio >= 1.0:
+    if len(X_train_full) < 2 or config.cal_ratio <= 0.0 or config.cal_ratio >= 1.0:
         print(
             "Error: Need at least 2 samples in training data and a valid calibration_ratio (0<ratio<1) for conformal split."
         )
         return
 
-    X_train_prop, X_cal, Y_train_prop, Y_cal = train_test_split(
+    X_train, X_cal, Y_train, Y_cal = train_test_split(
         X_train_full,
         Y_train_full,
-        test_size=calibration_ratio,
-        random_state=random_state,
+        test_size=config.cal_ratio,
+        random_state=config.seed,
         stratify=Y_train_full,
     )
-    print(
-        f"\nSplit data: Proper Training ({len(X_train_prop)}), Calibration ({len(X_cal)})"
-    )
+    print(f"\nSplit data: Training ({len(X_train)}), Calibration ({len(X_cal)})")
     if len(X_cal) == 0:
         print(
             "Error: Calibration set is empty after split. Check data and calibration_ratio."
         )
         return
 
-    # Train the Random Forest on the Proper Training Set
+    # Train the Random Forest on the Training Set
     model = RandomForest(
-        n_estimators=n_estimators,
+        n_estimators=config.n_estimators,
         mode="supervised",
-        random_state=random_state,
-        bootstrap=True,  # Ensure bootstrapping is enabled if OOB is needed
+        random_state=config.seed,
+        bootstrap=True,  # Ensure bootstrapping is enabled since OOB is needed
+        max_samples=0.8,
+        max_depth=max_depth,
+        min_samples=min_samples,
     )
-    print("\nFitting the model on the proper training set...")
-    model.fit(X_train_prop, Y_train_prop)
+    print("\nFitting the model on the training set...")
+    model.fit(X_train, Y_train)
 
     # Calculate Nonconformity Scores on the Calibration Set
     nonconformity_scores = calculate_nonconformity_scores(
-        model, X_cal, Y_cal, voting=voting_mechanism
+        model, X_cal, Y_cal, voting=config.voting
     )
     if len(nonconformity_scores) == 0:
         print("Error: Failed to calculate nonconformity scores. Aborting.")
@@ -265,8 +263,8 @@ def main_conformal(
         model,
         dataset.X_test,
         nonconformity_scores,
-        significance_level,
-        voting=voting_mechanism,
+        config.epsilon,
+        voting=config.voting,
     )
     if not prediction_sets or len(prediction_sets) != len(dataset.X_test):
         print(
@@ -291,12 +289,12 @@ def main_conformal(
         empirical_error_rate = 0.0
         print("Warning: Test set is empty. Cannot calculate error rate.")
 
-    print(f"  Significance Level (epsilon): {significance_level:.3f}")
+    print(f"  Significance Level (epsilon): {config.epsilon:.3f}")
     print(
         f"  Empirical Error Rate:       {empirical_error_rate:.3f} ({error_count}/{test_set_size} errors)"
     )
     # Check calibration allowing for slight numerical tolerance
-    if empirical_error_rate <= significance_level + 1e-6:
+    if empirical_error_rate <= config.epsilon + 1e-6:
         print("  Result: Classifier is adequately calibrated (Error <= epsilon).")
     else:
         print("  Result: Classifier appears miscalibrated (Error > epsilon).")
@@ -315,18 +313,18 @@ def main_conformal(
     print("\n  For reference:")
     try:
         point_accuracy = evaluate_forest_accuracy(
-            model, dataset.X_test, dataset.Y_test, voting=voting_mechanism
+            model, dataset.X_test, dataset.Y_test, voting=config.voting
         )
         print(f"    Underlying Model Point Accuracy: {point_accuracy * 100:.2f}%")
     except Exception as e:
         print(f"    Could not compute point prediction accuracy: {e}")
 
 
-def main_unsupervised(dataset, n_estimators: int, random_state: int):
+def main_unsupervised(dataset, config: ArgsType):
     """Performs unsupervised clustering using Isolation Forest distances."""
     print(f"\n--- Unsupervised Clustering Experiment ---")
     print(f"  Dataset: {dataset.dataset_name}")
-    print(f"  Num Estimators (Isolation Forest): {n_estimators}")
+    print(f"  Num Estimators (Isolation Forest): {config.n_estimators}")
     print(f"  Target Clusters: {dataset.true_num_classes}")
 
     # Ensure validation size was 0, use full training data for clustering
@@ -334,19 +332,21 @@ def main_unsupervised(dataset, n_estimators: int, random_state: int):
         print(
             "Warning: Unsupervised mode typically uses the full training set. Validation split will be ignored."
         )
-    X_cluster_data = dataset.X_train  # Use training data for clustering
-    Y_true_labels = dataset.Y_train  # Keep true labels for EXTERNAL evaluation later
+    X_cluster_data = dataset.X_train
+    Y_true_labels = dataset.Y_train
 
     # Initialize and Fit Isolation Forest
     print("\nFitting Isolation Forest...")
     isolation_forest = RandomForest(
-        n_estimators=n_estimators,
+        n_estimators=config.n_estimators,
         mode="unsupervised",
-        random_state=random_state,
+        random_state=config.seed,
         bootstrap=True,
-        max_samples=0.8, # Using 80% subsampling
+        max_samples=0.8,
         fo_unsupervised=fo_unsupervised_random,
         fe_unsupervised=fe_unsupervised_default,
+        max_depth=max_depth,
+        min_samples=min_samples,
     )
     isolation_forest.fit(X_cluster_data, Y=None)
 
@@ -391,7 +391,7 @@ def main_unsupervised(dataset, n_estimators: int, random_state: int):
                     f"Warning: Distance matrix for {dist_name} contains NaN or Inf values. Clustering might fail."
                 )
                 # Let's try to proceed, clustering will raise the error if it fails
-        
+
         except Exception as e:
             print(f"Error calculating {dist_name} distance: {e}. Skipping this metric.")
             continue
@@ -399,7 +399,9 @@ def main_unsupervised(dataset, n_estimators: int, random_state: int):
         # Perform Hierarchical Clustering
         print("Performing hierarchical clustering (average linkage)...")
         try:
-            cluster_labels = perform_clustering(distance_matrix, dataset.true_num_classes, dist_name)
+            cluster_labels = perform_clustering(
+                distance_matrix, dataset.true_num_classes, dist_name
+            )
         except Exception as e:
             print(
                 f"Error during clustering for {dist_name}: {e}. Skipping this metric."
@@ -408,7 +410,9 @@ def main_unsupervised(dataset, n_estimators: int, random_state: int):
 
         # Evaluate Clustering
         print("Evaluating clustering results...")
-        eval_results = evaluate_clustering(distance_matrix, cluster_labels, Y_true_labels)
+        eval_results = evaluate_clustering(
+            distance_matrix, cluster_labels, Y_true_labels
+        )
 
         # Store results for this distance metric
         results[dist_name] = {"clusters": cluster_labels, "evaluation": eval_results}
@@ -431,36 +435,36 @@ def main_unsupervised(dataset, n_estimators: int, random_state: int):
     else:
         print("  Not enough valid clustering results to compare.")
 
+
 def perform_clustering(distance_matrix, num_classes, dist_name: str):
     """Helper to perform hierarchical clustering."""
     # Convert to condensed form for SciPy
-    condensed_dist = squareform(distance_matrix, checks=True) # Enable checks
-    
+    condensed_dist = squareform(distance_matrix, checks=True)
+
     # Check for non-finite values *before* linkage
     if not np.all(np.isfinite(condensed_dist)):
         # Replace inf with a large number, handle nan
-        print("Warning: Non-finite values found in condensed distance matrix. Replacing with max finite value.")
+        print(
+            "Warning: Non-finite values found in condensed distance matrix. Replacing with max finite value."
+        )
         max_val = np.nanmax(condensed_dist[np.isfinite(condensed_dist)])
-        condensed_dist[np.isinf(condensed_dist)] = max_val + 1 # Replace inf
-        condensed_dist[np.isnan(condensed_dist)] = max_val + 1 # Replace nan
-        if not np.all(np.isfinite(condensed_dist)): # If still bad (e.g., all inf/nan)
-             raise ValueError("Distance matrix contains only non-finite values.")
+        condensed_dist[np.isinf(condensed_dist)] = max_val + 1  # Replace inf
+        condensed_dist[np.isnan(condensed_dist)] = max_val + 1  # Replace nan
+        if not np.all(np.isfinite(condensed_dist)):  # If still bad (e.g., all inf/nan)
+            raise ValueError("Distance matrix contains only non-finite values.")
 
     # Perform average linkage (UPGMA)
     linked = linkage(condensed_dist, method="average")
     # visualize dendrogram
     visualize_linkage(linked, dist_name)
     # Form flat clusters based on the true number of classes
-    cluster_labels = fcluster(
-        linked, t=num_classes, criterion="maxclust"
-    )
+    cluster_labels = fcluster(linked, t=num_classes, criterion="maxclust")
     # Adjust labels to be 0-indexed if they start from 1
     if np.min(cluster_labels) == 1:
         cluster_labels = cluster_labels - 1
-    print(
-        f"Clustering complete. Found {len(np.unique(cluster_labels))} clusters."
-    )
+    print(f"Clustering complete. Found {len(np.unique(cluster_labels))} clusters.")
     return cluster_labels
+
 
 def evaluate_clustering(distance_matrix, cluster_labels, y_true):
     """Helper to evaluate clustering results."""
@@ -478,7 +482,7 @@ def evaluate_clustering(distance_matrix, cluster_labels, y_true):
         entropy = calculate_entropy(y_true, cluster_labels)
         eval_results["purity"] = purity
         eval_results["entropy"] = entropy
-        
+
         # ARI vs True Labels
         ari_vs_true = adjusted_rand_score(y_true, cluster_labels)
         eval_results["ari_vs_true"] = ari_vs_true
@@ -491,33 +495,30 @@ def evaluate_clustering(distance_matrix, cluster_labels, y_true):
 
     except Exception as e:
         print(f"Error during evaluation: {e}.")
-        
+
     return eval_results
 
+
 if __name__ == "__main__":
-    args = parse_args()
+    config = parse_args()
 
     # Load the selected dataset
     dataset = load_dataset(
-        args.dataset, validation_size=args.val_size, random_state=args.seed
+        config.dataset, validation_size=config.val_size, random_state=config.seed
     )
 
+    max_depth = config.max_depth
+    min_samples = config.min_samples
+
     # Run the selected mode
-    if args.mode == "single_tree":
-        main_single_tree(dataset, args.relaxed_stopping)
-    elif args.mode == "forest":
-        main_forest(dataset, args.n_estimators, args.voting, args.seed)
-    elif args.mode == "conformal":
-        main_conformal(
-            dataset,
-            args.n_estimators,
-            args.voting,
-            args.seed,
-            args.cal_ratio,
-            args.epsilon,
-        )
-    elif args.mode == "unsupervised":
-        main_unsupervised(dataset, args.n_estimators, args.seed)
+    if config.mode == "single_tree":
+        main_single_tree(dataset, config)
+    elif config.mode == "forest":
+        main_forest(dataset, config)
+    elif config.mode == "conformal":
+        main_conformal(dataset, config)
+    elif config.mode == "unsupervised":
+        main_unsupervised(dataset, config)
     else:
-        print(f"Error: Unknown mode '{args.mode}'")
+        print(f"Error: Unknown mode '{config.mode}'")
         sys.exit(1)

@@ -39,8 +39,10 @@ class RandomForest:
         fo_unsupervised=None,
         fe_unsupervised=None,
         bootstrap: bool = True,
-        max_samples: float = 1.0,
+        max_samples: float = 0.7,
         random_state: int = None,
+        max_depth: int = 5,
+        min_samples: int = 2
     ):
         """
         Initializes the Random Forest.
@@ -62,6 +64,9 @@ class RandomForest:
         self.max_samples = max_samples
         self.random_state = random_state
 
+        self.max_depth = max_depth
+        self.min_samples = min_samples
+
         self.fo_unsupervised = (
             fo_unsupervised if fo_unsupervised is not None else fo_unsupervised_random
         )
@@ -74,6 +79,7 @@ class RandomForest:
 
         self.trees: List[PromptTree] = []
         # For track-record voting
+        # oob = out-of-bag (Validation technique for bootstrapped samples)
         self.oob_scores = None
         self.tree_max_depths = []
 
@@ -145,6 +151,8 @@ class RandomForest:
             current_tree_kwargs["fe"] = tree_fe
             current_tree_kwargs["fo"] = tree_fo
             current_tree_kwargs["fs_random_state"] = self.random_state + i
+            current_tree_kwargs["max_depth"] = self.max_depth
+            current_tree_kwargs["min_samples"] = self.min_samples
 
             tree = PromptTree(**current_tree_kwargs)
 
@@ -160,7 +168,6 @@ class RandomForest:
                 oob_acc = evaluate_tree_accuracy(tree, X_oob, Y_oob)
                 self.oob_scores[i] = oob_acc
         print("Forest fitting complete.")
-        return self
 
     def get_leaf_assignments(self, X):
         """Gets the leaf node ID for each sample in each tree."""

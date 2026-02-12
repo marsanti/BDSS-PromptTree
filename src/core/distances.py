@@ -86,15 +86,15 @@ def compute_breiman_distance_matrix(leaf_assignments: np.ndarray) -> np.ndarray:
         ] += 1
 
     # Normalize counts to get proximity
-    # Need to handle the diagonal separately as it wasn't fully counted in Method 2 loop
-    # Sample always in same leaf as itself
+    # a sample is always in the same leaf as itself in every single tree.
     np.fill_diagonal(proximity_counts, n_estimators)
     proximity_matrix = proximity_counts / n_estimators
 
     # Calculate the distance matrix
-    distance_matrix = 1.0 - proximity_matrix
+    distance_matrix = np.sqrt(1.0 - proximity_matrix)
 
     # Ensure diagonal is exactly zero due to potential floating point inaccuracies
+    # For clustering algorithms, a non-zero diagonal can cause bugs
     np.fill_diagonal(distance_matrix, 0)
 
     # Ensure symmetry (should already be symmetric, but good practice)

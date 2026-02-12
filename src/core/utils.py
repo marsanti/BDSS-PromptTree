@@ -22,18 +22,20 @@ def gini(Y):
 
 
 def split_by_test(X, Y, test):
+    """
+    CRST Channel reference slice test
+    """
     X_t, Y_t, X_f, Y_f = [], [], [], []
     c, x_ref, b, e, delta_func, eps = test
     if Y is None:
-        Y_iterator = [None] * len(X) # Create a dummy iterator of Nones
+        Y_iterator = [None] * len(X)  # Create a dummy iterator of Nones
         Y_t = None
         Y_f = None
     else:
         Y_iterator = Y
     for i, (xi, yi) in enumerate(zip(X, Y_iterator)):
-        if e > len(
-            xi[c]
-        ):  # need more observations -> send to "false" by design or treat as too-early
+        if e > len(xi[c]):
+            # need more observations -> send to "false" by design or treat as too-early
             X_f.append(xi)
             if Y is not None:
                 Y_f.append(yi)
@@ -110,7 +112,7 @@ def evaluate_forest_accuracy(
         valid_predictions_mask = predictions is not None
         if not np.all(valid_predictions_mask):
             print(
-                f"Warning: {np.sum(~valid_predictions_mask)} samples had invalid predictions."
+                f"Warning: {np.sum(not valid_predictions_mask)} samples had invalid predictions."
             )
             # Only compare where predictions are valid
             correct = np.sum(
@@ -245,12 +247,9 @@ def get_prediction_sets(
         if quantile_level <= 0.0:
             quantile_level = 1 / (N + 1)  # Ensure it's > 0
 
-        # Use np.quantile for potentially more stable calculation
         score_threshold = np.quantile(
             nonconformity_scores, quantile_level, method="higher"
-        )  # 'higher' matches ceil((1-a)(N+1))
-        # Add small epsilon for numerical stability if needed, though quantile should handle it
-        # score_threshold += 1e-9
+        )
 
         print(
             f"  Score threshold (q-hat): {score_threshold:.4f} (based on {N} calibration scores)"
@@ -289,7 +288,10 @@ def get_prediction_sets(
         print(f"Error generating prediction sets: {e}")
         return [[] for _ in range(len(X_test))]  # Return empty sets if error
 
-def calculate_cluster_distances(distance_matrix: np.ndarray, cluster_labels: np.ndarray):
+
+def calculate_cluster_distances(
+    distance_matrix: np.ndarray, cluster_labels: np.ndarray
+):
     """
     Calculates average intra-cluster and inter-cluster distances.
 
@@ -319,7 +321,9 @@ def calculate_cluster_distances(distance_matrix: np.ndarray, cluster_labels: np.
         n_in_cluster = len(indices_in_cluster)
         if n_in_cluster > 1:
             # Extract sub-matrix for the cluster
-            cluster_dist_matrix = distance_matrix[np.ix_(indices_in_cluster, indices_in_cluster)]
+            cluster_dist_matrix = distance_matrix[
+                np.ix_(indices_in_cluster, indices_in_cluster)
+            ]
             # Sum upper triangle (excluding diagonal) to count each pair once
             # Note: np.sum gives sum of all elements, divide by 2 later if needed,
             # but counting pairs is more direct.
@@ -328,7 +332,9 @@ def calculate_cluster_distances(distance_matrix: np.ndarray, cluster_labels: np.
             total_intra_dist += cluster_sum
             intra_pairs_count += num_pairs_in_cluster
 
-    avg_intra_dist = total_intra_dist / intra_pairs_count if intra_pairs_count > 0 else 0.0
+    avg_intra_dist = (
+        total_intra_dist / intra_pairs_count if intra_pairs_count > 0 else 0.0
+    )
 
     # Inter-cluster distance
     if num_clusters <= 1:
@@ -353,7 +359,9 @@ def calculate_cluster_distances(distance_matrix: np.ndarray, cluster_labels: np.
                 total_inter_dist += cluster_pair_sum
                 inter_pairs_count += num_pairs_between
 
-        avg_inter_dist = total_inter_dist / inter_pairs_count if inter_pairs_count > 0 else 0.0
+        avg_inter_dist = (
+            total_inter_dist / inter_pairs_count if inter_pairs_count > 0 else 0.0
+        )
 
     return avg_intra_dist, avg_inter_dist
 
@@ -433,12 +441,15 @@ def calculate_entropy(y_true: np.ndarray, y_pred_clusters: np.ndarray) -> float:
 
     return total_entropy
 
+
 def visualize_linkage(linked: np.ndarray, dist_name: str):
     plt.figure(figsize=(10, 5))
-    dendrogram(linked, truncate_mode='lastp', p=20, leaf_rotation=90., leaf_font_size=10.)
-    plt.title(f'Hierarchical Clustering Dendrogram ({dist_name})')
-    plt.xlabel('Cluster Size')
-    plt.ylabel('Distance')
+    dendrogram(
+        linked, truncate_mode="lastp", p=20, leaf_rotation=90.0, leaf_font_size=10.0
+    )
+    plt.title(f"Hierarchical Clustering Dendrogram ({dist_name})")
+    plt.xlabel("Cluster Size")
+    plt.ylabel("Distance")
     plt.tight_layout()
     plt.savefig(f"dendrogram_{dist_name}.png")
     plt.close()

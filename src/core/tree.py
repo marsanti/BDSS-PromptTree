@@ -24,6 +24,8 @@ class PromptTree:
         fo_unsupervised=None,
         fe_unsupervised=None,
         fs_random_state=None,
+        max_depth=5,
+        min_samples=2
     ):
         # Supervised defaults
         self.fp = fp if fp is not None else fp_default
@@ -42,6 +44,9 @@ class PromptTree:
 
         self.root = None
         self.fs_random_state = fs_random_state 
+
+        self.max_depth = max_depth
+        self.min_samples = min_samples
 
     # Update fit to pass is_unsupervised and leaf_counter
     def fit(self, X, Y=None, is_unsupervised=False):
@@ -73,7 +78,7 @@ class PromptTree:
             Y_for_split = Y
 
         # Check stopping criterion
-        if current_fe(Path, X, Y, depth):
+        if current_fe(Path, X, Y, depth, self.max_depth, self.min_samples):
             leaf_id = leaf_counter[0]
             leaf_counter[0] += 1
             node = Node(dist=current_fc(X, Y), depth=depth)
@@ -157,10 +162,7 @@ class PromptTree:
             depth=depth,
         )
         # Store pre-split distribution ONLY if supervised (useful for pruning)
-        if not is_unsupervised:
-            node.dist = self.fc(X, Y)  # Original self.fc for supervised distribution
-        else:
-            node.dist = current_fc(X, Y)  # Store count or empty dict
+        node.dist = current_fc(X, Y)  # Store count or empty dict
 
         # Use Y_for_split (None if unsupervised) for the split function
         (X_t, Y_t), (X_f, Y_f) = split_by_test(
@@ -168,7 +170,7 @@ class PromptTree:
         )
 
         # Recurse
-        new_step = dict(c=c, b=b, e=e, delta=delta_name, eps=eps)
+        new_step = dict(c=c, x_ref=x_ref, b=b, e=e, delta=delta_name, eps=eps)
 
         node.left = self._fit_recursive(
             X_t, Y_t, Path + [new_step], depth + 1, leaf_counter, is_unsupervised
@@ -195,7 +197,6 @@ class PromptTree:
                 node = node.left if d <= node.eps else node.right
                 current_depth += 1
             except IndexError:
-                # This might happen if b/e are somehow invalid despite length check
                 print(
                     f"Error: IndexError during distance calculation at depth {current_depth}. Slice [{node.b}:{node.e}], Channel {node.c}, Sample shape {x_sample.shape}"
                 )
@@ -274,14 +275,14 @@ class PromptTree:
         # Start the recursive pruning process from the root
         self._prune_recursive(self.root, X_val, Y_val)
 
-    def _calculate_accuracy(self, node, X, Y):
+    def _calculate_accuracy(self, node: Node, X, Y):
         """
         Calculate accuracy of a subtree for a given dataset.
         """
         correct = 0
         for x_sample, y_sample in zip(X, Y):
             # Predict using the subtree starting from 'node'
-            current_node = node
+            current_node: Node = node
             while not current_node.is_leaf:
                 # Handle promptness: if data is too short, prediction is wrong by default
                 if current_node.e > x_sample[current_node.c].shape[-1]:
@@ -301,7 +302,7 @@ class PromptTree:
 
         return correct / len(Y) if len(Y) > 0 else 0.0
 
-    def _prune_recursive(self, node, X_val, Y_val):
+    def _prune_recursive(self, node: Node, X_val, Y_val):
         # Base case: if no validation data, return
         if len(Y_val) == 0:
             return
@@ -324,10 +325,9 @@ class PromptTree:
         accuracy_subtree = self._calculate_accuracy(node, X_val, Y_val)
 
         # Calculate accuracy IF we turned this node into a leaf.
-        majority_class = max(node.dist, key=node.dist.get)
-        accuracy_as_leaf = sum(1 for y in Y_val if y == majority_class) / len(Y_val)
+        accuracy_as_leaf = sum(1 for y in Y_val if y == node.predicted_class) / len(Y_val)
 
-        # 5. The Pruning Decision
+        # The Pruning Decision
         if accuracy_as_leaf >= accuracy_subtree:
             print(
                 f"Pruning node at slice [{node.b}:{node.e}]. Accuracy change: {accuracy_subtree:.3f} -> {accuracy_as_leaf:.3f}"

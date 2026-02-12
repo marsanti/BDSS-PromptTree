@@ -43,10 +43,17 @@ def fp_default(
     # Iterate over all channels, not just channel 0
     for c in range(num_channels):
         for b in starts:
-            for w in window_lengths:
-                e = b + w
-                if e <= min_T:
-                    cands.append((c, [b, e])) # Propose test for channel c
+            if(window_lengths is None or len(window_lengths) == 0):
+                        if b >= min_T:
+                            continue
+
+                        for e in range(b+1, min_T+1):
+                            cands.add((c, [b, e]))
+            else:
+                    for w in window_lengths:
+                        e = b + w
+                        if e <= min_T:
+                            cands.append((c, [b, e])) # Propose test for channel c
 
     return cands
 
@@ -193,7 +200,7 @@ def fo_unsupervised_random(X, Y, candidate_tests):
     for test in candidate_tests:
         c, x_ref, eps, (b, e), delta_name = test
         delta_func = DELTA_SET[delta_name]
-        (X_t, Y_t), (X_f, Y_f) = split_by_test(X, None, (c, x_ref, b, e, delta_func, eps)) # Pass Y=None
+        (X_t, Y_t), (X_f, Y_f) = split_by_test(X, None, (c, x_ref, b, e, delta_func, eps))
         if len(X_t) > 0 and len(X_f) > 0:
             valid_tests.append(test)
 
@@ -205,8 +212,10 @@ def fo_unsupervised_random(X, Y, candidate_tests):
     return best_test, 1.0 # Return dummy gain
 
 
-def fe_unsupervised_default(Path, X, Y, depth, max_depth=15): # Example max_depth
-     """Stopping criterion for isolation."""
+def fe_unsupervised_default(Path, X, Y, depth, max_depth=15, min_samples:int = 2): # Example max_depth
+     """Stopping criterion for isolation.
+        Min samples is not used, but kept for interface consistency.
+     """
      if depth >= max_depth or len(X) <= 1:
          return True
      return False
