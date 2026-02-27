@@ -144,7 +144,7 @@ def main_single_tree(dataset, config: ArgsType):
     # Visualization
     print("\nVisualizing trees...")
     # Use config for base output path
-    output_base_dir = os.path.join(config.get("PROJECT_ROOT"), "output")
+    output_base_dir = os.path.join(config.config.get("PROJECT_ROOT"), "output")
     output_dir = os.path.join(output_base_dir, dataset.dataset_name, stopping_path)
     os.makedirs(output_dir, exist_ok=True)
     print(f"Saving visualizations to: {output_dir}")

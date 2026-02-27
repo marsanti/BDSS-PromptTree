@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ArgsType:
+    config: dict
     mode: str
     dataset: str
     val_size: float
@@ -145,4 +146,5 @@ def parse_args() -> ArgsType:
     if not (0 <= args.val_size < 1):
          parser.error("--val_size must be between 0 and 1 (inclusive of 0)")
 
+    args.config = config
     return args
