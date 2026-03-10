@@ -120,9 +120,7 @@ class RandomForest:
             raise ValueError("X and Y must have the same number of samples.")
 
         self.oob_scores = np.zeros(self.n_estimators)
-        oob_predictions = [[] for _ in range(n_samples)]
-        oob_true_labels = [[] for _ in range(n_samples)]
-
+       
         self.trees = []
         self.tree_max_depths = []
         for i in range(self.n_estimators):

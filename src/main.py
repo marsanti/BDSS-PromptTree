@@ -290,9 +290,7 @@ def main_conformal(dataset, config: ArgsType):
         print("Warning: Test set is empty. Cannot calculate error rate.")
 
     print(f"  Significance Level (epsilon): {config.epsilon:.3f}")
-    print(
-        f"  Empirical Error Rate:       {empirical_error_rate:.3f} ({error_count}/{test_set_size} errors)"
-    )
+    print(f"  Empirical Error Rate:       {empirical_error_rate:.3f} ({error_count}/{test_set_size} errors)")
     # Check calibration allowing for slight numerical tolerance
     if empirical_error_rate <= config.epsilon + 1e-6:
         print("  Result: Classifier is adequately calibrated (Error <= epsilon).")
@@ -300,9 +298,7 @@ def main_conformal(dataset, config: ArgsType):
         print("  Result: Classifier appears miscalibrated (Error > epsilon).")
 
     # Compute Efficiency (Average Prediction Set Size)
-    set_sizes = [
-        len(s) for s in prediction_sets if s
-    ]  # Avoid counting empty error sets if any
+    set_sizes = [len(s) for s in prediction_sets if s]  # Avoid counting empty error sets if any
     average_set_size = np.mean(set_sizes) if set_sizes else 0.0
     median_set_size = np.median(set_sizes) if set_sizes else 0.0  # Also useful
     print(f"\n  Efficiency:")

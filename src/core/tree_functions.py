@@ -212,7 +212,7 @@ def fo_unsupervised_random(X, Y, candidate_tests):
     return best_test, 1.0 # Return dummy gain
 
 
-def fe_unsupervised_default(Path, X, Y, depth, max_depth=15, min_samples:int = 2): # Example max_depth
+def fe_unsupervised_default(Path, X, Y, depth, max_depth=12, min_samples:int = 2): # Example max_depth
      """Stopping criterion for isolation.
         Min samples is not used, but kept for interface consistency.
      """
