@@ -1,9 +1,11 @@
 import sys
 import numpy as np
 import typing
+from typing import Set
 
 if typing.TYPE_CHECKING:
     from core.forest import RandomForest
+    from core.node import Node
 
 
 def delta_l2(a, b):
@@ -256,5 +258,79 @@ def compute_ratioRF_distance_matrix(leaf_assignments: np.ndarray) -> np.ndarray:
 
     return distance_matrix
 
+def compute_BCM_distance_matrix(forest: "RandomForest", X: np.ndarray):
+        """
+        Another RatioRF distance, made by Manuele Bicego, Ferdinando Cicalese and Antonella Mensi.
+        """
+        if not forest.trees:
+            raise RuntimeError("No trees in the forest. Cannot compute BCM distance.")
+            
+        n_samples = len(X)
+        ratioDT_matrix = np.zeros((n_samples, n_samples))
+        
+        for tree in forest.trees:
+            # Extract paths for all samples
+            sample_paths = []
+            for i in range(n_samples):
+                nodes = tree.get_path_nodes(X[i])
+                sample_paths.append([n for n in nodes if not n.is_leaf])
+                
+            # Identify all unique tests (nodes) encountered across all paths
+            unique_nodes: Set[Node] = set()
+            for p in sample_paths:
+                unique_nodes.update(p)
+                
+            # This ensures we evaluate y on x's path and vice versa
+            node_evals = {n: [None] * n_samples for n in unique_nodes}
+            for node in unique_nodes:
+                delta_func = DELTA_SET[node.delta_name]
+                for i in range(n_samples):
+                    x_sample = X[i]
+                    if node.e <= x_sample[node.c].shape[-1]:
+                        d = delta_func(x_sample[node.c][node.b : node.e], node.x_ref)
+                        node_evals[node][i] = (d <= node.eps)
+                        
+            # Filter paths to only include valid tests (so exclude 'too-early' cases)
+            valid_paths = []
+            for i in range(n_samples):
+                valid_paths.append(set(n for n in sample_paths[i] if node_evals.get(n, [None]*n_samples)[i] is not None))
+                
+            # Compute pairwise RatioDT for this tree
+            tree_ratioDT = np.zeros((n_samples, n_samples))
+            for i in range(n_samples):
+                path_i = valid_paths[i]
+                tree_ratioDT[i, i] = 1.0
+                
+                for j in range(i + 1, n_samples):
+                    path_j = valid_paths[j]
+                    path_union = path_i.union(path_j)
+                    
+                    intersection_count = 0
+                    diff_i_j = 0
+                    diff_j_i = 0
+                    
+                    for node in path_union:
+                        res_i = node_evals[node][i]
+                        res_j = node_evals[node][j]
+                        
+                        if res_i is not None and res_i == res_j:
+                            intersection_count += 1
+                        else:
+                            if node in path_i:
+                                diff_i_j += 1
+                            if node in path_j:
+                                diff_j_i += 1
+                                
+                    denom = intersection_count + diff_i_j + diff_j_i
+                    ratioDT = intersection_count / denom if denom > 0 else 0.0
+                    
+                    tree_ratioDT[i, j] = ratioDT
+                    tree_ratioDT[j, i] = ratioDT
+                    
+            ratioDT_matrix += tree_ratioDT
+            
+        # Average over all trees
+        ratioDT_matrix /= forest.n_estimators
+        return np.sqrt(1.0 - ratioDT_matrix)         
 
 DELTA_SET = {"l2": delta_l2}

@@ -1,3 +1,4 @@
+from typing import List
 from .node import Node
 from .tree_functions import (
     fp_default,
@@ -398,7 +399,7 @@ class PromptTree:
         print(f"Tree visualization saved to {filename}.png")
 
 
-    def get_path_nodes(self, x_sample):
+    def get_path_nodes(self, x_sample) -> List[Node]:
         """Returns the list of nodes traversed by a sample to reach a leaf (or failure point)."""
         path = []
         node = self.root

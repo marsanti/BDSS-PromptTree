@@ -34,6 +34,7 @@ from core.distances import (
     compute_breiman_distance_matrix,
     compute_zhu_distance_matrix,
     compute_ratioRF_distance_matrix,
+    compute_BCM_distance_matrix
 )
 from config import ArgsType, config, parse_args
 
@@ -363,6 +364,7 @@ def main_unsupervised(dataset, config: ArgsType):
         "Breiman": compute_breiman_distance_matrix,
         "Zhu": compute_zhu_distance_matrix,
         "RatioRF": compute_ratioRF_distance_matrix,
+        "BCM": compute_BCM_distance_matrix,
     }
 
     results = {}  # Store clustering results (labels and evaluations)
@@ -373,7 +375,7 @@ def main_unsupervised(dataset, config: ArgsType):
         # Calculate Distance Matrix
         print(f"Calculating {dist_name} distance matrix...")
         try:
-            if dist_name == "Zhu":
+            if dist_name == "Zhu" or dist_name == "BCM":
                 # Zhu distance needs the forest and the data (X)
                 distance_matrix = dist_func(isolation_forest, X_cluster_data)
             else:
